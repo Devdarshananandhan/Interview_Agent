@@ -10,3 +10,5 @@ imageio>=2.34.0
 imageio-ffmpeg>=0.4.9
 torch>=2.0.0
 transformers>=4.30.0
+SpeechRecognition>=3.10.0
+pydub>=0.25.1

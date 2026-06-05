@@ -653,6 +653,137 @@
             color: var(--red);
         }
 
+        .input-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .input-tab {
+            padding: 12px 16px;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.95rem;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.2s ease;
+        }
+
+        .input-tab.active {
+            color: var(--blue);
+            border-bottom-color: var(--blue);
+        }
+
+        .input-section {
+            display: none;
+        }
+
+        .input-section.active {
+            display: block;
+        }
+
+        .audio-upload-area {
+            position: relative;
+            padding: 32px;
+            border: 2px dashed var(--line);
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(245, 248, 251, 0.5) 0%, rgba(230, 238, 245, 0.5) 100%);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .audio-upload-area:hover {
+            border-color: var(--blue);
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(37, 99, 235, 0.03) 100%);
+        }
+
+        .audio-upload-area.dragging {
+            border-color: var(--blue);
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(37, 99, 235, 0.08) 100%);
+        }
+
+        .audio-upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 2.5rem;
+            color: var(--blue);
+        }
+
+        .upload-text {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .upload-text strong {
+            color: var(--ink);
+            font-size: 1rem;
+        }
+
+        .upload-text span {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .audio-progress {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5edf4;
+            overflow: hidden;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .audio-progress.active {
+            display: block;
+        }
+
+        .audio-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--blue) 0%, var(--teal) 100%);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .transcription-status {
+            padding: 12px;
+            border-radius: 8px;
+            background: #eff6ff;
+            color: var(--blue);
+            font-size: 0.9rem;
+            display: none;
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .transcription-status.active {
+            display: block;
+        }
+
+        .transcription-status.success {
+            background: #dcfce7;
+            color: var(--green);
+        }
+
+        .transcription-status.error {
+            background: #fff1f2;
+            color: var(--red);
+        }
+
         @media (max-width: 920px) {
             .hero,
             .main-grid,
@@ -749,21 +880,59 @@
                     <button class="info" type="button" aria-label="Transcript scoring information" data-tip="The scorer uses transcript text and optional duration. Duration enables words-per-minute scoring; without it, the Speech Rate metric receives 0 because pace cannot be measured.">i</button>
                 </div>
                 <div class="panel-body">
-                    <label for="transcript">Self-introduction transcript</label>
-                    <textarea id="transcript" placeholder="Example: Hello everyone, my name is Ananya. I am 13 years old and studying in class 8. I live with my parents and sister. I enjoy reading and playing badminton. My goal is to become a doctor. Thank you for listening."></textarea>
-
-                    <div class="field-row">
-                        <div>
-                            <label for="duration">Duration in seconds</label>
-                            <div class="assist-text">Optional, but needed for WPM. Ideal pace is 111-140 words per minute.</div>
-                        </div>
-                        <input type="number" id="duration" min="1" placeholder="52">
+                    <div class="input-tabs">
+                        <button class="input-tab active" type="button" onclick="switchInputMode('text')">📝 Paste Text</button>
+                        <button class="input-tab" type="button" onclick="switchInputMode('audio')">🎤 Upload Audio</button>
                     </div>
 
-                    <div class="actions">
-                        <button class="btn btn-primary" type="button" onclick="scoreTranscript()">Score and generate video</button>
-                        <button class="btn btn-secondary" type="button" onclick="loadSample()">Load sample</button>
-                        <button class="btn btn-secondary" type="button" onclick="clearAll()">Clear</button>
+                    <!-- Text Input Mode -->
+                    <div class="input-section active" id="textInputSection">
+                        <label for="transcript">Self-introduction transcript</label>
+                        <textarea id="transcript" placeholder="Example: Hello everyone, my name is Ananya. I am 13 years old and studying in class 8. I live with my parents and sister. I enjoy reading and playing badminton. My goal is to become a doctor. Thank you for listening."></textarea>
+
+                        <div class="field-row">
+                            <div>
+                                <label for="duration">Duration in seconds</label>
+                                <div class="assist-text">Optional, but needed for WPM. Ideal pace is 111-140 words per minute.</div>
+                            </div>
+                            <input type="number" id="duration" min="1" placeholder="52">
+                        </div>
+
+                        <div class="actions">
+                            <button class="btn btn-primary" type="button" onclick="scoreTranscript()">Score and generate video</button>
+                            <button class="btn btn-secondary" type="button" onclick="loadSample()">Load sample</button>
+                            <button class="btn btn-secondary" type="button" onclick="clearAll()">Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Audio Upload Mode -->
+                    <div class="input-section" id="audioInputSection">
+                        <label>Upload audio file (self-introduction)</label>
+                        <div class="audio-upload-area" id="audioUploadArea" ondrop="handleAudioDrop(event)" ondragover="handleAudioDragOver(event)" ondragleave="handleAudioDragLeave(event)" onclick="document.getElementById('audioInput').click()">
+                            <span class="upload-icon">📁</span>
+                            <div class="upload-text">
+                                <strong>Drag audio file here or click to browse</strong>
+                                <span>Supported: MP3, WAV, M4A, WebM, OGG, FLAC, AAC (max 50MB)</span>
+                            </div>
+                            <input type="file" id="audioInput" accept="audio/*" onchange="handleAudioSelect(event)">
+                        </div>
+                        <div class="audio-progress" id="audioProgress">
+                            <div class="audio-progress-bar" id="audioProgressBar"></div>
+                        </div>
+                        <div class="transcription-status" id="transcriptionStatus"></div>
+
+                        <div class="field-row" style="margin-top: 16px;">
+                            <div>
+                                <label for="audioDuration">Duration in seconds (if known)</label>
+                                <div class="assist-text">Optional. Leave empty if unsure.</div>
+                            </div>
+                            <input type="number" id="audioDuration" min="1" placeholder="52">
+                        </div>
+
+                        <div class="actions">
+                            <button class="btn btn-primary" type="button" id="scoreAudioBtn" onclick="scoreTranscript()" disabled>Score and generate video</button>
+                            <button class="btn btn-secondary" type="button" onclick="clearAudioSection()">Clear</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -824,6 +993,129 @@
                 .replaceAll(">", "&gt;")
                 .replaceAll('"', "&quot;")
                 .replaceAll("'", "&#039;");
+        }
+
+        // Audio Upload Functions
+        function switchInputMode(mode) {
+            const textSection = document.getElementById('textInputSection');
+            const audioSection = document.getElementById('audioInputSection');
+            const tabs = document.querySelectorAll('.input-tab');
+
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            if (mode === 'text') {
+                textSection.classList.add('active');
+                audioSection.classList.remove('active');
+                tabs[0].classList.add('active');
+            } else {
+                textSection.classList.remove('active');
+                audioSection.classList.add('active');
+                tabs[1].classList.add('active');
+            }
+        }
+
+        function handleAudioDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('audioUploadArea').classList.add('dragging');
+        }
+
+        function handleAudioDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('audioUploadArea').classList.remove('dragging');
+        }
+
+        function handleAudioDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('audioUploadArea').classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleAudioSelect({ target: { files } });
+            }
+        }
+
+        async function handleAudioSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('transcriptionStatus');
+            const progress = document.getElementById('audioProgress');
+            const progressBar = document.getElementById('audioProgressBar');
+            
+            status.classList.remove('active', 'success', 'error');
+            progress.classList.add('active');
+            progressBar.style.width = '0%';
+
+            status.textContent = 'Uploading audio file...';
+            status.classList.add('active');
+
+            try {
+                const formData = new FormData();
+                formData.append('audio', file);
+
+                // Simulate progress
+                let currentProgress = 0;
+                const progressInterval = setInterval(() => {
+                    if (currentProgress < 90) {
+                        currentProgress += Math.random() * 30;
+                        progressBar.style.width = Math.min(currentProgress, 90) + '%';
+                    }
+                }, 200);
+
+                const response = await fetch(`${API_URL}/api/transcribe`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to transcribe audio');
+                }
+
+                // Put transcript in text area and switch to text mode
+                document.getElementById('transcript').value = data.transcript;
+                
+                // Copy audio duration to text mode duration if available
+                const audioDuration = document.getElementById('audioDuration').value;
+                if (audioDuration) {
+                    document.getElementById('duration').value = audioDuration;
+                }
+
+                status.textContent = '✓ Audio transcribed successfully!';
+                status.classList.add('success');
+                document.getElementById('scoreAudioBtn').disabled = false;
+
+                // Auto-switch to text mode to show the transcript
+                setTimeout(() => {
+                    switchInputMode('text');
+                    document.getElementById('transcript').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 1000);
+
+            } catch (error) {
+                status.textContent = '✗ ' + (error.message || 'Transcription failed');
+                status.classList.add('error');
+                progress.classList.remove('active');
+                progressBar.style.width = '0%';
+                document.getElementById('scoreAudioBtn').disabled = true;
+            }
+        }
+
+        function clearAudioSection() {
+            document.getElementById('audioInput').value = '';
+            document.getElementById('audioDuration').value = '';
+            document.getElementById('transcript').value = '';
+            document.getElementById('duration').value = '';
+            document.getElementById('audioProgress').classList.remove('active');
+            document.getElementById('audioProgressBar').style.width = '0%';
+            document.getElementById('transcriptionStatus').classList.remove('active', 'success', 'error');
+            document.getElementById('scoreAudioBtn').disabled = true;
         }
 
         async function init() {
@@ -900,11 +1192,17 @@
         }
 
         async function scoreTranscript() {
-            const transcript = document.getElementById("transcript").value.trim();
-            const duration = document.getElementById("duration").value;
+            let transcript = document.getElementById("transcript").value.trim();
+            let duration = document.getElementById("duration").value;
+
+            // If in audio mode, use audio duration as fallback
+            const currentMode = document.getElementById('textInputSection').classList.contains('active') ? 'text' : 'audio';
+            if (currentMode === 'audio' && !duration) {
+                duration = document.getElementById('audioDuration').value;
+            }
 
             if (!transcript) {
-                showError("Please enter a transcript to score.");
+                showError("Please enter a transcript or upload an audio file to score.");
                 return;
             }
 

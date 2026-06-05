@@ -11,6 +11,7 @@ import re
 import subprocess
 import time
 import wave
+import speech_recognition as sr
 from PIL import Image, ImageDraw, ImageFont
 import imageio.v2 as imageio
 import imageio_ffmpeg
@@ -34,6 +35,36 @@ GENERATED_VIDEO_NAME = "generated_interview_video.mp4"
 NARRATION_TEXT_NAME = "narration_script.txt"
 NARRATION_WAV_NAME = "narration.wav"
 VIDEO_ONLY_NAME = "generated_interview_video_silent.mp4"
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+ALLOWED_AUDIO_EXTENSIONS = {'.wav', '.mp3', '.m4a', '.ogg', '.webm', '.flac', '.aac'}
+MAX_AUDIO_SIZE = 50 * 1024 * 1024  # 50MB
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(GENERATED_DIR, exist_ok=True)
+
+# Initialize speech recognizer
+print("Initializing speech recognizer...")
+recognizer = sr.Recognizer()
+
+def transcribe_audio(file_path):
+    """
+    Transcribe audio file using Google Speech Recognition API.
+    Returns the extracted text transcript.
+    """
+    try:
+        # Load audio file
+        with sr.AudioFile(file_path) as source:
+            audio_data = recognizer.record(source)
+        
+        # Use Google's free speech recognition API
+        text = recognizer.recognize_google(audio_data)
+        return text.strip()
+    except sr.UnknownValueError:
+        raise Exception("Audio could not be understood. Please ensure the audio is clear and in English.")
+    except sr.RequestError as e:
+        raise Exception(f"Speech recognition service error: {str(e)}")
+    except Exception as e:
+        raise Exception(f"Transcription failed: {str(e)}")
 
 def get_font(size, bold=False):
     """Use a readable Windows font when available, with a safe fallback."""
@@ -305,10 +336,79 @@ def api_info():
         "version": "1.0",
         "endpoints": {
             "/api/score": "POST - Score a transcript",
+            "/api/transcribe": "POST - Transcribe audio to text",
             "/api/rubrics": "GET - Get rubrics",
             "/api/sample": "GET - Get sample transcript"
         }
     })
+
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe_audio_file():
+    """
+    Transcribe audio file to text using Whisper.
+    Expected: multipart form data with 'audio' file.
+    Returns: JSON with extracted transcript text.
+    """
+    try:
+        # Check if file is present in request
+        if 'audio' not in request.files:
+            return jsonify({
+                "error": "No audio file provided in request"
+            }), 400
+        
+        file = request.files['audio']
+        
+        if file.filename == '':
+            return jsonify({
+                "error": "No file selected for uploading"
+            }), 400
+        
+        # Check file extension
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in ALLOWED_AUDIO_EXTENSIONS:
+            return jsonify({
+                "error": f"Unsupported audio format. Allowed formats: {', '.join(ALLOWED_AUDIO_EXTENSIONS)}"
+            }), 400
+        
+        # Create temporary file path
+        timestamp = int(time.time() * 1000)
+        temp_filename = f"audio_{timestamp}{file_ext}"
+        temp_filepath = os.path.join(UPLOAD_FOLDER, temp_filename)
+        
+        # Save uploaded file
+        file.save(temp_filepath)
+        
+        # Check file size
+        file_size = os.path.getsize(temp_filepath)
+        if file_size > MAX_AUDIO_SIZE:
+            os.remove(temp_filepath)
+            return jsonify({
+                "error": f"Audio file too large. Maximum size: {MAX_AUDIO_SIZE / 1024 / 1024:.0f}MB"
+            }), 400
+        
+        # Transcribe audio
+        try:
+            transcript = transcribe_audio(temp_filepath)
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_filepath):
+                os.remove(temp_filepath)
+        
+        if not transcript:
+            return jsonify({
+                "error": "Could not extract text from audio. Please ensure the audio is clear."
+            }), 400
+        
+        return jsonify({
+            "transcript": transcript,
+            "status": "success",
+            "filename": file.filename
+        }), 200
+    
+    except Exception as e:
+        return jsonify({
+            "error": f"Transcription error: {str(e)}"
+        }), 500
 
 @app.route('/generated-video', methods=['GET'])
 def generated_video():
