@@ -12,26 +12,56 @@ class Agent:
     def log(self, message):
         print(f"[{self.name}] {message}")
 
+BASE_DIR = os.path.dirname(__file__)
+
+
 class VideoProcessorAgent(Agent):
     def __init__(self):
         super().__init__("VideoProcessor")
 
-    def extract_audio(self, video_path, output_audio_path="temp_audio.mp3"):
+    def extract_audio(self, video_path, output_audio_path=None):
+        """Extract audio to a deterministic absolute temp path.
+
+        Using absolute paths avoids WinError 2 when the working directory differs
+        between extraction and transcription.
+        """
         self.log(f"Processing video: {video_path}")
         try:
             if not os.path.exists(video_path):
                 raise FileNotFoundError(f"Video file not found: {video_path}")
-            
+
             video = VideoFileClip(video_path)
             self.log(f"Video duration: {video.duration} seconds")
-            
+
+            output_dir = os.path.join(BASE_DIR, "generated_outputs")
+            os.makedirs(output_dir, exist_ok=True)
+
+            if output_audio_path is None:
+                # Unique filename per run to avoid stale/missing files.
+                output_audio_path = os.path.join(
+                    output_dir, f"temp_audio_{int(video.duration * 1000)}.mp3"
+                )
+
+            # Ensure absolute path (helps when main.py is launched from elsewhere)
+            if not os.path.isabs(output_audio_path):
+                output_audio_path = os.path.abspath(output_audio_path)
+
+            # Write audio to the desired path and verify it exists.
             video.audio.write_audiofile(output_audio_path, logger=None)
+
+            if not os.path.exists(output_audio_path):
+                raise FileNotFoundError(
+                    "Audio extraction failed; file not found after write: "
+                    f"{output_audio_path} (abs: {os.path.abspath(output_audio_path)})"
+                )
+
             self.log(f"Audio extracted to: {output_audio_path}")
-            
             return output_audio_path, video.duration
         except Exception as e:
             self.log(f"Error extracting audio: {str(e)}")
             raise
+
+
 
 class TranscriptionAgent(Agent):
     def __init__(self, model_size="base"):
@@ -41,11 +71,22 @@ class TranscriptionAgent(Agent):
         self.log("Model loaded.")
 
     def transcribe(self, audio_path):
-        self.log(f"Transcribing audio: {audio_path}")
-        result = self.model.transcribe(audio_path)
+        # Always normalize to absolute path for better diagnostics
+        audio_path_abs = os.path.abspath(audio_path)
+        self.log(f"Transcribing audio: {audio_path_abs}")
+
+        # Fail fast with a clear error if the extracted file isn't actually present.
+        if not os.path.exists(audio_path_abs):
+            raise FileNotFoundError(
+                f"Audio file not found for transcription: {audio_path_abs} (exists={os.path.exists(audio_path_abs)})"
+            )
+
+        result = self.model.transcribe(audio_path_abs)
         transcript = result["text"]
         self.log("Transcription complete.")
         return transcript
+
+
 
 class ScoringAgent(Agent):
     def __init__(self):

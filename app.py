@@ -2,6 +2,8 @@
 Flask REST API for Communication Skills Scoring
 """
 from flask import Flask, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
+
 from flask_cors import CORS
 from rubric_parser import RubricParser
 from scoring_engine import ScoringEngine
@@ -28,7 +30,44 @@ print("Initializing scoring engine...")
 scorer = ScoringEngine(rubrics)
 print("API ready!")
 
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Setup local FFmpeg binary dynamically for Whisper and other subprocesses
+try:
+    import imageio_ffmpeg
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+    
+    local_bin = os.path.join(BASE_DIR, "bin")
+    os.makedirs(local_bin, exist_ok=True)
+    local_ffmpeg = os.path.join(local_bin, "ffmpeg.exe")
+    
+    if not os.path.exists(local_ffmpeg):
+        try:
+            os.link(ffmpeg_exe, local_ffmpeg)
+            print(f"Created hardlink to FFmpeg at {local_ffmpeg}")
+        except Exception as link_err:
+            import shutil
+            shutil.copyfile(ffmpeg_exe, local_ffmpeg)
+            print(f"Copied FFmpeg to {local_ffmpeg}")
+            
+    if local_bin not in os.environ["PATH"]:
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ["PATH"]
+except Exception as ffmpeg_setup_err:
+    print(f"Warning: Failed to setup local FFmpeg binary: {ffmpeg_setup_err}")
+
+# Whisper model caching
+whisper_model = None
+
+def get_whisper_model():
+    global whisper_model
+    if whisper_model is None:
+        import whisper
+        print("Loading Whisper model ('base')...")
+        whisper_model = whisper.load_model('base')
+        print("Whisper model loaded!")
+    return whisper_model
+
 GENERATED_DIR = os.path.join(BASE_DIR, "generated_outputs")
 GENERATED_VIDEO_NAME = "generated_interview_video.mp4"
 NARRATION_TEXT_NAME = "narration_script.txt"
@@ -118,22 +157,25 @@ def synthesize_narration(script_text, output_wav_path):
     with open(text_path, "w", encoding="utf-8") as file:
         file.write(script_text)
 
+    safe_text_path = text_path.replace("'", "''")
+    safe_wav_path = output_wav_path.replace("'", "''")
+
+    ps_command = (
+        "Add-Type -AssemblyName System.Speech; "
+        f"$text = Get-Content -Raw -LiteralPath '{safe_text_path}'; "
+        "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        "$speaker.Rate = 0; "
+        "$speaker.Volume = 100; "
+        f"$speaker.SetOutputToWaveFile('{safe_wav_path}'); "
+        "$speaker.Speak($text); "
+        "$speaker.Dispose();"
+    )
+
     command = [
         "powershell",
         "-NoProfile",
         "-Command",
-        (
-            "Add-Type -AssemblyName System.Speech; "
-            "$text = Get-Content -Raw -LiteralPath $args[0]; "
-            "$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-            "$speaker.Rate = 0; "
-            "$speaker.Volume = 100; "
-            "$speaker.SetOutputToWaveFile($args[1]); "
-            "$speaker.Speak($text); "
-            "$speaker.Dispose();"
-        ),
-        text_path,
-        output_wav_path
+        ps_command
     ]
     subprocess.run(command, check=True, capture_output=True, text=True)
 
@@ -378,7 +420,72 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 
+@app.route('/api/score-audio', methods=['POST'])
+def score_audio():
+    """Score an uploaded self-introduction audio by converting speech to text (Whisper).
+
+    Request (multipart/form-data):
+      - audio: required audio file
+      - duration_seconds: optional number (for WPM)
+    """
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "Missing audio file in form-data. Field name must be 'audio'."}), 400
+
+        audio_file = request.files['audio']
+        if not audio_file or not audio_file.filename:
+            return jsonify({"error": "Audio filename is empty."}), 400
+
+        duration_seconds_raw = request.form.get('duration_seconds', None)
+        duration_seconds = None
+        if duration_seconds_raw:
+            try:
+                duration_seconds = int(duration_seconds_raw)
+            except ValueError:
+                return jsonify({"error": "duration_seconds must be an integer."}), 400
+
+        os.makedirs(GENERATED_DIR, exist_ok=True)
+        filename = secure_filename(audio_file.filename)
+        unique_prefix = str(int(time.time() * 1000))
+        saved_audio_path = os.path.join(GENERATED_DIR, f"upload_{unique_prefix}_{filename}")
+        audio_file.save(saved_audio_path)
+
+        if not os.path.exists(saved_audio_path):
+            return jsonify({"error": "Upload save failed; saved file not found on server.", "path": saved_audio_path}), 500
+
+
+        # Transcribe with Whisper (using global cached model)
+        try:
+            model = get_whisper_model()
+        except Exception as e:
+            return jsonify({"error": f"Whisper model failed to load. Details: {str(e)}"}), 500
+
+        saved_audio_abs = os.path.abspath(saved_audio_path)
+        transcript_result = model.transcribe(saved_audio_abs, fp16=False)
+
+        transcript = (transcript_result.get('text') or '').strip()
+
+
+        if not transcript:
+            return jsonify({"error": "Transcription returned empty text."}), 400
+
+        results = scorer.calculate_score(transcript, duration_seconds)
+        results['transcript_extracted'] = transcript
+
+        try:
+            results["generated_video"] = generate_video_artifact(transcript, results)
+        except Exception as video_error:
+            results["generated_video"] = None
+            results["video_error"] = str(video_error)
+            print(f"Warning: video generation failed: {video_error}")
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Error scoring uploaded audio: {str(e)}"}), 500
+
 if __name__ == '__main__':
+
     print("\n" + "="*80)
     print("Starting Communication Skills Scoring API...")
     print("API will be available at: http://localhost:5000")

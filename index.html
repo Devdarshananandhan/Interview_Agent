@@ -352,6 +352,27 @@
             line-height: 1.55;
         }
 
+        .audio-upload {
+            margin-top: 14px;
+            border: 1px dashed #b8c7d5;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 14px;
+        }
+
+        .audio-upload input[type="file"] {
+            width: 100%;
+            padding: 8px;
+        }
+
+        .audio-upload .audio-hint {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 0.86rem;
+            line-height: 1.4;
+        }
+
+
         textarea:focus,
         input:focus,
         button:focus-visible {
@@ -762,9 +783,20 @@
 
                     <div class="actions">
                         <button class="btn btn-primary" type="button" onclick="scoreTranscript()">Score and generate video</button>
+                        <button class="btn btn-secondary" type="button" onclick="scoreAudio()">Upload audio & score</button>
                         <button class="btn btn-secondary" type="button" onclick="loadSample()">Load sample</button>
                         <button class="btn btn-secondary" type="button" onclick="clearAll()">Clear</button>
                     </div>
+
+                    <div class="audio-upload">
+                        <label for="audioFile" style="margin-bottom: 7px;">Upload self-introduction audio</label>
+                        <input type="file" accept="audio/*" id="audioFile" />
+                        <div class="audio-hint">
+                            The backend will convert your speech to text (Whisper) and then run the same scoring + video generation.
+                        </div>
+                    </div>
+
+
                 </div>
             </div>
 
@@ -935,6 +967,50 @@
                 document.getElementById("loading").classList.remove("active");
             }
         }
+
+        async function scoreAudio() {
+            const duration = document.getElementById("duration").value;
+            const fileInput = document.getElementById("audioFile");
+            const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+            if (!file) {
+                showError("Please select an audio file to score.");
+                return;
+            }
+
+            document.getElementById("loading").classList.add("active");
+            document.getElementById("loading").textContent = "Transcribing audio (Whisper) and preparing generated video...";
+            document.getElementById("results").classList.remove("active");
+            document.getElementById("generatedVideoPanel").classList.add("hidden");
+
+            try {
+                const formData = new FormData();
+                formData.append("audio", file);
+                if (duration) formData.append("duration_seconds", parseInt(duration, 10));
+
+                const response = await fetch(`${API_URL}/api/score-audio`, {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "Error scoring audio.");
+                }
+
+                if (data.transcript_extracted) {
+                    document.getElementById("transcript").value = data.transcript_extracted;
+                }
+
+                displayResults(data);
+                showGeneratedVideo(data.generated_video);
+            } catch (error) {
+                showError(error.message || "Failed to connect to API. Make sure the backend is running.");
+            } finally {
+                document.getElementById("loading").classList.remove("active");
+            }
+        }
+
 
         function displayResults(data) {
             const score = Number(data.overall_score || 0);

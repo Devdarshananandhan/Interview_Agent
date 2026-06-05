@@ -1,5 +1,31 @@
 import os
 import sys
+
+# Setup local FFmpeg binary dynamically for Whisper and other subprocesses
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    import imageio_ffmpeg
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+    
+    local_bin = os.path.join(BASE_DIR, "bin")
+    os.makedirs(local_bin, exist_ok=True)
+    local_ffmpeg = os.path.join(local_bin, "ffmpeg.exe")
+    
+    if not os.path.exists(local_ffmpeg):
+        try:
+            os.link(ffmpeg_exe, local_ffmpeg)
+            print(f"Created hardlink to FFmpeg at {local_ffmpeg}")
+        except Exception as link_err:
+            import shutil
+            shutil.copyfile(ffmpeg_exe, local_ffmpeg)
+            print(f"Copied FFmpeg to {local_ffmpeg}")
+            
+    if local_bin not in os.environ["PATH"]:
+        os.environ["PATH"] = local_bin + os.pathsep + os.environ["PATH"]
+except Exception as ffmpeg_setup_err:
+    print(f"Warning: Failed to setup local FFmpeg binary: {ffmpeg_setup_err}")
+
 from agents import VideoProcessorAgent, TranscriptionAgent, ScoringAgent, ReportingAgent
 from moviepy import ColorClip, TextClip, CompositeVideoClip, AudioFileClip
 from gtts import gTTS
