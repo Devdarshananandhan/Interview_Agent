@@ -183,6 +183,61 @@ def get_wav_duration(path):
     with wave.open(path, "rb") as audio:
         return audio.getnframes() / float(audio.getframerate())
 
+def get_audio_file_duration(path):
+    # Try using ffmpeg command since it's already set up and guaranteed to support all formats
+    try:
+        import subprocess
+        import re
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        
+        # Run ffmpeg -i path
+        cmd = [ffmpeg_exe, "-i", path]
+        # ffmpeg prints info to stderr, so we capture stderr
+        result = subprocess.run(cmd, capture_output=True, text=True, errors='ignore')
+        output = result.stderr
+        
+        # Look for Duration: hh:mm:ss.xx
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", output)
+        if match:
+            hours = int(match.group(1))
+            minutes = int(match.group(2))
+            seconds = float(match.group(3))
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            return total_seconds
+    except Exception as e:
+        print(f"Warning: ffmpeg duration extraction failed: {e}")
+
+    # Fallback to moviepy
+    try:
+        from moviepy import AudioFileClip
+        clip = AudioFileClip(path)
+        duration = clip.duration
+        clip.close()
+        return duration
+    except Exception as e:
+        print(f"Warning: moviepy import failed: {e}")
+            
+    # Try moviepy.editor
+    try:
+        from moviepy.editor import AudioFileClip
+        clip = AudioFileClip(path)
+        duration = clip.duration
+        clip.close()
+        return duration
+    except Exception as e:
+        print(f"Warning: moviepy.editor import failed: {e}")
+            
+    # Try using wave (for WAV files)
+    try:
+        import wave
+        with wave.open(path, "rb") as audio:
+            return audio.getnframes() / float(audio.getframerate())
+    except Exception:
+        pass
+        
+    return None
+
 def draw_score_ring(draw, center, radius, score, progress, fill="#0f766e"):
     start_angle = -90
     end_angle = start_angle + (360 * min(score, 100) / 100) * progress
@@ -437,12 +492,12 @@ def score_audio():
             return jsonify({"error": "Audio filename is empty."}), 400
 
         duration_seconds_raw = request.form.get('duration_seconds', None)
-        duration_seconds = None
+        manual_duration = None
         if duration_seconds_raw:
             try:
-                duration_seconds = int(duration_seconds_raw)
+                manual_duration = float(duration_seconds_raw)
             except ValueError:
-                return jsonify({"error": "duration_seconds must be an integer."}), 400
+                return jsonify({"error": "duration_seconds must be a number."}), 400
 
         os.makedirs(GENERATED_DIR, exist_ok=True)
         filename = secure_filename(audio_file.filename)
@@ -465,12 +520,26 @@ def score_audio():
 
         transcript = (transcript_result.get('text') or '').strip()
 
+        # Auto-detect duration from the uploaded audio file itself
+        detected_duration = get_audio_file_duration(saved_audio_abs)
+        
+        # Fallback to Whisper segment timestamps if file duration extraction failed
+        if detected_duration is None:
+            segments = transcript_result.get('segments') or []
+            if segments:
+                detected_duration = round(segments[-1]['end'], 2)
+        else:
+            detected_duration = round(detected_duration, 2)
+
+        # Priority: manual override > detected > None
+        duration_seconds = manual_duration if manual_duration is not None else detected_duration
 
         if not transcript:
             return jsonify({"error": "Transcription returned empty text."}), 400
 
         results = scorer.calculate_score(transcript, duration_seconds)
         results['transcript_extracted'] = transcript
+        results['audio_duration_detected'] = detected_duration
 
         try:
             results["generated_video"] = generate_video_artifact(transcript, results)

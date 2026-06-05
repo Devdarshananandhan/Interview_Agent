@@ -26,12 +26,20 @@ try:
 except Exception as ffmpeg_setup_err:
     print(f"Warning: Failed to setup local FFmpeg binary: {ffmpeg_setup_err}")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agents import VideoProcessorAgent, TranscriptionAgent, ScoringAgent, ReportingAgent
-from moviepy import ColorClip, TextClip, CompositeVideoClip, AudioFileClip
-from gtts import gTTS
 
 def create_dummy_video(filename="sample_video.mp4"):
     """Creates a dummy video with a self-introduction audio for testing."""
+    # Lazy imports — moviepy and gTTS are only needed when creating a dummy video,
+    # not during the normal video-scoring flow.
+    try:
+        from moviepy import ColorClip, AudioFileClip
+        from gtts import gTTS
+    except ImportError as imp_err:
+        print(f"[create_dummy_video] Missing dependency: {imp_err}")
+        print("Run: pip install moviepy gTTS")
+        raise
     print("Creating dummy video for demonstration...")
     
     # Sample text from the case study

@@ -1129,6 +1129,19 @@
             }
         });
 
+        document.getElementById("audioFile").addEventListener("change", event => {
+            const file = event.target.files[0];
+            if (file) {
+                const audio = new Audio();
+                audio.src = URL.createObjectURL(file);
+                audio.addEventListener("loadedmetadata", () => {
+                    if (audio.duration && !isNaN(audio.duration)) {
+                        document.getElementById("duration").value = Math.round(audio.duration);
+                    }
+                });
+            }
+        });
+
         init();
     </script>
 </body>
